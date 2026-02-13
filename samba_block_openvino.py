@@ -1,4 +1,5 @@
 import argparse
+import time
 
 import numpy as np
 import openvino as ov
@@ -90,27 +91,62 @@ def build_samba_block_model(
     return ov.Model([out], [x_param], name)
 
 
-def run_demo(device="CPU", batch=2, seq=16, d_model=128):
+def run_prefill_decode_demo(device="CPU", batch=2, seq=16, d_model=128, decode_steps=32, warmup=3):
     model = build_samba_block_model(d_model=d_model)
     core = ov.Core()
     compiled = core.compile_model(model, device)
 
-    x = np.random.randn(batch, seq, d_model).astype(np.float32)
-    y = compiled([x])[0]
-    print("input shape:", x.shape)
-    print("output shape:", y.shape)
-    print("output dtype:", y.dtype)
+    prefill_x = np.random.randn(batch, seq, d_model).astype(np.float32)
+    decode_x = np.random.randn(batch, 1, d_model).astype(np.float32)
+
+    for _ in range(warmup):
+        compiled([prefill_x])
+        compiled([decode_x])
+
+    t0 = time.perf_counter()
+    prefill_y = compiled([prefill_x])[0]
+    t1 = time.perf_counter()
+    prefill_ms = (t1 - t0) * 1000.0
+
+    t2 = time.perf_counter()
+    for _ in range(decode_steps):
+        decode_y = compiled([decode_x])[0]
+    t3 = time.perf_counter()
+    decode_total_ms = (t3 - t2) * 1000.0
+    decode_per_token_ms = decode_total_ms / decode_steps
+
+    print(f"device: {device}")
+    print("prefill: one-shot inference on full prompt sequence")
+    print(f"  input shape: {prefill_x.shape}")
+    print(f"  output shape: {prefill_y.shape}")
+    print(f"  latency: {prefill_ms:.3f} ms")
+    print("decode: iterative inference for one token at a time")
+    print(f"  input shape per step: {decode_x.shape}")
+    print(f"  output shape per step: {decode_y.shape}")
+    print(f"  steps: {decode_steps}")
+    print(f"  total latency: {decode_total_ms:.3f} ms")
+    print(f"  latency/token: {decode_per_token_ms:.3f} ms")
+    print("note: this demo block is stateless; decode here emulates token-by-token execution.")
 
 
 def parse_args():
-    parser = argparse.ArgumentParser(description="Run Samba-like OpenVINO block demo")
+    parser = argparse.ArgumentParser(description="Run Samba-like OpenVINO block prefill/decode demo")
     parser.add_argument("--device", default="CPU", help="OpenVINO device name, e.g. CPU, GPU, NPU")
     parser.add_argument("--batch", type=int, default=2, help="Batch size")
-    parser.add_argument("--seq", type=int, default=16, help="Sequence length")
+    parser.add_argument("--seq", type=int, default=16, help="Prompt sequence length for prefill")
     parser.add_argument("--d-model", type=int, default=128, help="Model hidden size")
+    parser.add_argument("--decode-steps", type=int, default=32, help="Number of decode token steps")
+    parser.add_argument("--warmup", type=int, default=3, help="Warmup runs before timing")
     return parser.parse_args()
 
 
 if __name__ == "__main__":
     args = parse_args()
-    run_demo(device=args.device, batch=args.batch, seq=args.seq, d_model=args.d_model)
+    run_prefill_decode_demo(
+        device=args.device,
+        batch=args.batch,
+        seq=args.seq,
+        d_model=args.d_model,
+        decode_steps=args.decode_steps,
+        warmup=args.warmup,
+    )
