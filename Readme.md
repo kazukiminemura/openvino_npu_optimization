@@ -1,4 +1,4 @@
-﻿# OpenVINO NPU Optimization
+# OpenVINO NPU Optimization
 
 OpenVINO Runtimeで動作する**Sambaアーキテクチャ風スタック**の実装です。
 GPU/NPUの恩恵が出やすいように、複数層+広い内部次元の重め構成を使えるようにしています。
@@ -51,8 +51,15 @@ NPU向け例:
 python samba_block_openvino.py --device NPU --batch 1 --seq 128 --d-model 256 --layers 6 --expansion 4 --decode-steps 64
 ```
 
+CPU/GPU/NPUをまとめて比較する例:
+```bash
+python samba_block_openvino.py --compare-all --batch 1 --seq 128 --d-model 256 --layers 6 --expansion 4 --decode-steps 64
+```
+
 ## 主なCLI引数
 - `--device`: 実行デバイス (`CPU`, `GPU`, `NPU` など)
+- `--compare-all`: `CPU/GPU/NPU` を連続実行し、計測結果を1つの表で表示
+- `--strict-device`: 実際の実行デバイスが指定デバイスと一致しない場合にエラー終了
 - `--batch`: バッチサイズ
 - `--seq`: prefillの系列長
 - `--d-model`: 隠れ次元
@@ -64,3 +71,12 @@ python samba_block_openvino.py --device NPU --batch 1 --seq 128 --d-model 256 --
 - `--sram-dtype`: SRAM推定時の精度 (`fp32`, `fp16`, `int8`)
 - `--gpu-sram-mib`: GPUの想定SRAM容量(MiB)
 - `--npu-sram-mib`: NPUの想定SRAM容量(MiB)
+
+## トラブルシュート: デバイスを変えてもレイテンシーが同じ
+- 実行結果の `actual prefill execution devices` / `actual decode execution devices` を確認してください。
+- 指定した `--device` と異なる実行先になっている場合、フォールバックや混在実行が発生しています。
+- 厳密に確認するには `--strict-device` を付けます。
+
+```bash
+python samba_block_openvino.py --device NPU --strict-device --batch 1 --seq 128 --d-model 256 --layers 6 --expansion 4 --decode-steps 64
+```
