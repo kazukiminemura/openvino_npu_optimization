@@ -299,14 +299,20 @@ def run_prefill_decode_demo(
         print(f"\n[decode] running {decode_steps} token-by-token steps")
         print(f"  input shape per step: {decode_x.shape} (batch={batch}, seq=1, d_model={d_model})")
     t2 = time.perf_counter()
-    for _ in range(decode_steps):
+    decode_y = decode_compiled([decode_x])[0]
+    t_first = time.perf_counter()
+    for _ in range(decode_steps - 1):
         decode_y = decode_compiled([decode_x])[0]
     t3 = time.perf_counter()
     decode_total_ms = (t3 - t2) * 1000.0
+    first_token_ms = (t_first - t2) * 1000.0
+    ttft_ms = prefill_ms + first_token_ms
     decode_per_token_ms = decode_total_ms / decode_steps
     if verbose:
         print(f"  output shape per step: {decode_y.shape}")
         print(f"  total latency: {decode_total_ms:.3f} ms")
+        print(f"  first-token latency: {first_token_ms:.3f} ms")
+        print(f"  time to first token (prefill + first token): {ttft_ms:.3f} ms")
         print(f"  per-token latency: {decode_per_token_ms:.3f} ms")
 
     dtype_bytes_map = {"fp32": 4, "fp16": 2, "int8": 1}
@@ -344,6 +350,8 @@ def run_prefill_decode_demo(
         print(f"  output shape per step: {decode_y.shape}")
         print(f"  steps: {decode_steps}")
         print(f"  total latency: {decode_total_ms:.3f} ms")
+        print(f"  first-token latency: {first_token_ms:.3f} ms")
+        print(f"  time to first token (prefill + first token): {ttft_ms:.3f} ms")
         print(f"  per-token latency: {decode_per_token_ms:.3f} ms")
         
         print("\nsram estimate (approx.):")
@@ -366,6 +374,8 @@ def run_prefill_decode_demo(
         "device": device,
         "prefill_ms": prefill_ms,
         "decode_total_ms": decode_total_ms,
+        "first_token_ms": first_token_ms,
+        "ttft_ms": ttft_ms,
         "decode_per_token_ms": decode_per_token_ms,
         "prefill_exec_devices": prefill_exec_devices,
         "decode_exec_devices": decode_exec_devices,
@@ -417,6 +427,8 @@ def run_multi_device_summary(
             print(
                 f"  prefill={res['prefill_ms']:.3f} ms, "
                 f"decode_total={res['decode_total_ms']:.3f} ms, "
+                f"first_token={res['first_token_ms']:.3f} ms, "
+                f"ttft={res['ttft_ms']:.3f} ms, "
                 f"decode_per_token={res['decode_per_token_ms']:.3f} ms"
             )
         except Exception as e:
@@ -424,7 +436,10 @@ def run_multi_device_summary(
             print(f"  failed: {e}")
 
     print("\n" + "-"*85)
-    print(f"{'device':<10} {'prefill(ms)':>12} {'decode_total(ms)':>16} {'decode/token(ms)':>17}  execution_devices")
+    print(
+        f"{'device':<10} {'prefill(ms)':>12} {'decode_total(ms)':>16} "
+        f"{'first_token(ms)':>16} {'ttft(ms)':>10} {'decode/token(ms)':>17}  execution_devices"
+    )
     print("-"*85)
     for res in results:
         if "error" in res:
@@ -435,6 +450,8 @@ def run_multi_device_summary(
             f"{res['device']:<10} "
             f"{res['prefill_ms']:>12.3f} "
             f"{res['decode_total_ms']:>16.3f} "
+            f"{res['first_token_ms']:>16.3f} "
+            f"{res['ttft_ms']:>10.3f} "
             f"{res['decode_per_token_ms']:>17.3f}  "
             f"{exec_devices}"
         )
